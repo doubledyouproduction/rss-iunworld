@@ -32,6 +32,33 @@ TEST_FILE = os.environ.get("APIFY_JSON_FILE")  # nur fuer lokale Tests
 OUT_DIR = Path("docs")
 STORE = OUT_DIR / "posts.json"
 FEED = OUT_DIR / "feed.xml"
+IMG_DIR = OUT_DIR / "img"
+
+# Oeffentliche Adresse deiner GitHub-Pages-Seite (wird in GitHub Actions automatisch erkannt)
+_repo = os.environ.get("GITHUB_REPOSITORY", "")  # z. B. "doubledyouproduction/rss-iunworld"
+SITE_URL = os.environ.get("SITE_URL") or (
+    f"https://{_repo.split('/')[0]}.github.io/{_repo.split('/')[1]}" if "/" in _repo else ""
+)
+
+
+def save_image(key, src):
+    """Laedt das Instagram-Bild einmal herunter und legt es unter docs/img/ ab.
+    Instagram-Bildlinks laufen ab und werden von Teams oft blockiert, eigene nicht."""
+    if not src or not SITE_URL:
+        return src
+    safe = "".join(c for c in key if c.isalnum() or c in "-_")
+    target = IMG_DIR / f"{safe}.jpg"
+    if not target.exists():
+        try:
+            req = urllib.request.Request(src, headers={"User-Agent": "Mozilla/5.0"})
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                data = resp.read()
+            IMG_DIR.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(data)
+        except Exception as e:  # Bild nicht ladbar -> Original-Link behalten
+            print(f"Bild fuer {key} nicht geladen: {e}")
+            return src
+    return f"{SITE_URL}/img/{target.name}"
 
 
 def fetch_posts():
@@ -83,7 +110,7 @@ def main():
             "url": url,
             "caption": p.get("caption") or "",
             "timestamp": p.get("timestamp"),
-            "image": p.get("displayUrl"),
+            "image": save_image(key, p.get("displayUrl")),
             "type": p.get("type"),
             "owner": p.get("ownerUsername"),
             "owner_name": p.get("ownerFullName"),
@@ -92,6 +119,14 @@ def main():
     # neueste zuerst, Historie begrenzen
     items = sorted(store.items(), key=lambda kv: kv[1]["first_seen"], reverse=True)[:MAX_ITEMS]
     store = dict(items)
+
+    # Bilder von Posts, die nicht mehr im Feed sind, aufraeumen
+    if IMG_DIR.exists():
+        keep = {Path(v.get("image") or "").name for _, v in items}
+        for f in IMG_DIR.glob("*.jpg"):
+            if f.name not in keep:
+                f.unlink()
+
     STORE.write_text(json.dumps(store, ensure_ascii=False, indent=2), encoding="utf-8")
 
     owner = next((v.get("owner") for _, v in items if v.get("owner")), "instagram")
