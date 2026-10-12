@@ -177,6 +177,30 @@ def make_title(text, fallback):
     return first_line if len(first_line) <= 110 else first_line[:107].rstrip() + "..."
 
 
+# Kurznamen der Hochschulen: Suchbegriff (klein geschrieben) -> Anzeige in Teams
+SHORT_NAMES = [
+    ("seeburg", "Seeburg"),
+    ("dhgs", "DHGS"),
+    ("ham_hochschule", "HAM"),
+    ("hochschule - ham", "HAM"),
+    ("angewandtes management", "HAM"),
+]
+
+
+def short_name(v):
+    haystack = " ".join(str(v.get(k) or "") for k in ("owner", "handle", "profile")).lower()
+    for needle, label in SHORT_NAMES:
+        if needle in haystack:
+            return label
+    return v.get("owner") or ""
+
+
+def header(v, platform):
+    """z. B. 'Instagram | HAM' oder 'LinkedIn | Seeburg'"""
+    name = short_name(v)
+    return f"{platform} | {name}" if name else platform
+
+
 def build_source(source, now):
     store = json.loads(source["store"].read_text(encoding="utf-8")) if source["store"].exists() else {}
 
@@ -217,13 +241,18 @@ def build_source(source, now):
     items = sorted(store.items(), key=lambda kv: kv[1]["first_seen"], reverse=True)[:MAX_ITEMS]
     source["store"].write_text(json.dumps(dict(items), ensure_ascii=False, indent=2), encoding="utf-8")
 
-    owner = next((v.get("owner") for _, v in items if v.get("owner")), source["name"])
-    handle = next((v.get("handle") for _, v in items if v.get("handle")), owner)
-    profile = next((v.get("profile") for _, v in items if v.get("profile")), "")
-
     pname = source["name"]
-    channel_title = f"{pname} – {owner}"
-    channel_desc = f"Neue {pname}-Posts von {handle}"
+    owners = list(dict.fromkeys(v.get("owner") for _, v in items if v.get("owner")))
+    handles = list(dict.fromkeys(v.get("handle") for _, v in items if v.get("handle")))
+    profile = next((v.get("profile") for _, v in items if v.get("profile")), "")
+    if len(owners) > 1:  # mehrere Accounts in einem Feed
+        channel_title = f"{pname} – {', '.join(owners)}"
+        channel_desc = f"Neue {pname}-Posts von {', '.join(handles)}"
+        profile = "https://www.instagram.com/" if pname == "Instagram" else "https://www.linkedin.com/"
+    else:
+        owner = owners[0] if owners else pname
+        channel_title = f"{pname} – {owner}"
+        channel_desc = f"Neue {pname}-Posts von {handles[0] if handles else owner}"
     parts = [
         '<?xml version="1.0" encoding="UTF-8"?>',
         '<rss version="2.0">',
@@ -237,7 +266,8 @@ def build_source(source, now):
     for key, v in items:
         posted = parse_iso(v.get("timestamp"))
         posted_txt = posted.astimezone().strftime("%d.%m.%Y %H:%M") if posted else ""
-        desc = ""
+        # Herkunft als erste Zeile, damit sie in Teams ganz oben steht
+        desc = f"<b>{escape(header(v, pname))}</b><br><br>"
         if v.get("image"):
             desc += f'<img src="{escape(v["image"])}" alt=""><br>'
         desc += escape(v["text"]).replace("\n", "<br>")
@@ -248,7 +278,8 @@ def build_source(source, now):
 
         parts += [
             "<item>",
-            f"<title>{escape(make_title(v['text'], source['fallback_title']))}</title>",
+            # Account-Name vorne, damit in Teams sofort klar ist, von wem der Post kommt
+            f"<title>{escape('[' + header(v, pname) + '] ' + make_title(v['text'], source['fallback_title']))}</title>",
             f"<link>{escape(v['url'])}</link>",
             f'<guid isPermaLink="false">{escape(key)}</guid>',
             f"<pubDate>{format_datetime(parse_iso(v['first_seen']))}</pubDate>",
