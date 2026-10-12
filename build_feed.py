@@ -181,9 +181,13 @@ def make_title(text, fallback):
 SHORT_NAMES = [
     ("seeburg", "Seeburg"),
     ("dhgs", "DHGS"),
+    ("health-and-sport", "DHGS"),
+    ("health and sport", "DHGS"),
+    ("gesundheit und sport", "DHGS"),
     ("ham_hochschule", "HAM"),
     ("hochschule - ham", "HAM"),
     ("angewandtes management", "HAM"),
+    ("angewandtes-management", "HAM"),
 ]
 
 
