@@ -2,15 +2,11 @@ name: Instagram RSS Feed
 
 on:
   schedule:
-    - cron: "*/30 * * * *"   # alle 30 Minuten
-  workflow_dispatch:          # Button "Run workflow" zum manuellen Starten
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
 
 permissions:
   contents: write
-
-concurrency:
-  group: feed
-  cancel-in-progress: false
 
 jobs:
   build:
